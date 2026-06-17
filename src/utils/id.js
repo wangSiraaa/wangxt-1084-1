@@ -1,0 +1,7 @@
+export function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).substring(2, 9)
+}
+
+export function generateShortId() {
+  return Math.random().toString(36).substring(2, 10)
+}
