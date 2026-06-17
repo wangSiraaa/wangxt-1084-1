@@ -310,6 +310,23 @@ export const usePerformanceStore = defineStore("performance", () => {
     return (performance.equipmentIds || []).map(eqId => equipmentStore.getEquipmentById(eqId)).filter(Boolean)
   }
 
+  function getPerformancesBySongId(songId) {
+    return performances.value.filter(p => (p.songIds || []).includes(songId))
+  }
+
+  function removeSongFromPerformances(songId, allowedStatuses) {
+    let affected = 0
+    performances.value.forEach(p => {
+      if (p.songIds && p.songIds.includes(songId) && allowedStatuses.includes(p.status)) {
+        p.songIds = p.songIds.filter(id => id !== songId)
+        p.updatedAt = Date.now()
+        affected++
+      }
+    })
+    if (affected > 0) persist()
+    return affected
+  }
+
   if (!storage.get(STORAGE_KEYS.PERFORMANCES)) {
     persist()
   }
@@ -346,6 +363,8 @@ export const usePerformanceStore = defineStore("performance", () => {
     backToDraft,
     searchPerformances,
     getSongsByPerformanceId,
-    getEquipmentsByPerformanceId
+    getEquipmentsByPerformanceId,
+    getPerformancesBySongId,
+    removeSongFromPerformances
   }
 })

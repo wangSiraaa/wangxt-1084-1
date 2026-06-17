@@ -605,6 +605,41 @@ function saveSong() {
 }
 
 function handleDeleteSong(song) {
+  const referencingPerfs = performanceStore.getPerformancesBySongId(song.id)
+
+  const startedRefs = referencingPerfs.filter(p => p.status === PERFORMANCE_STATUS.STARTED)
+  const suspendedRefs = referencingPerfs.filter(p => p.status === PERFORMANCE_STATUS.SUSPENDED)
+  const confirmedRefs = referencingPerfs.filter(p => p.status === PERFORMANCE_STATUS.CONFIRMED)
+  const draftRefs = referencingPerfs.filter(p => p.status === PERFORMANCE_STATUS.DRAFT)
+
+  if (startedRefs.length > 0 || suspendedRefs.length > 0) {
+    const blocked = [...startedRefs, ...suspendedRefs]
+    const names = blocked.map(p => `「${p.name}」(${PERFORMANCE_STATUS_LABEL[p.status]})`).join('、')
+    alert(`无法删除曲目「${song.name}」\n\n该曲目正在被以下活动演出单引用：${names}\n排练进行中或已挂起的演出单不能删除曲目，请先完成排练或恢复后处理。`)
+    return
+  }
+
+  if (confirmedRefs.length > 0 || draftRefs.length > 0) {
+    const lines = []
+    if (confirmedRefs.length > 0) {
+      lines.push(`已确认演出单：${confirmedRefs.map(p => `「${p.name}」`).join('、')}`)
+    }
+    if (draftRefs.length > 0) {
+      lines.push(`草稿演出单：${draftRefs.map(p => `「${p.name}」`).join('、')}`)
+    }
+    const ok = confirm(
+      `曲目「${song.name}」被以下演出单引用：\n\n${lines.join('\n')}\n\n删除后将自动从这些演出单中移除该曲目。确定要继续吗？`
+    )
+    if (!ok) return
+
+    performanceStore.removeSongFromPerformances(song.id, [
+      PERFORMANCE_STATUS.DRAFT,
+      PERFORMANCE_STATUS.CONFIRMED
+    ])
+    songStore.deleteSong(song.id)
+    return
+  }
+
   if (confirm(`确定要删除曲目「${song.name}」吗？`)) {
     songStore.deleteSong(song.id)
   }
