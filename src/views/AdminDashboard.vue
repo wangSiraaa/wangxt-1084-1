@@ -1,8 +1,16 @@
 <template>
   <div class="admin-dashboard">
     <div class="page-header">
-      <h2>🎛️ 管理员工作台</h2>
-      <p class="subtitle">设备全生命周期管理 · 设备需求总览</p>
+      <div>
+        <h2>🎛️ 管理员工作台</h2>
+        <p class="subtitle">设备全生命周期管理 · 设备需求总览</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-warning header-matrix-btn" @click="gotoMatrix">
+          ⚠️ 冲突矩阵
+          <span v-if="conflictStore.pendingCount > 0" class="pending-dot">{{ conflictStore.pendingCount }}</span>
+        </button>
+      </div>
     </div>
 
     <div class="stats-row">
@@ -218,6 +226,10 @@
             </div>
           </div>
         </div>
+
+        <div v-if="activeTab === 'conflicts'" class="tab-panel">
+          <ConflictCoordinationPanel />
+        </div>
       </div>
     </div>
 
@@ -275,6 +287,13 @@ import { ref, computed, reactive } from 'vue'
 import { useEquipmentStore, EQUIPMENT_STATUS, EQUIPMENT_STATUS_LABEL } from '../stores/equipment'
 import { usePerformanceStore, PERFORMANCE_STATUS, PERFORMANCE_STATUS_LABEL } from '../stores/performance'
 import { useSignupStore } from '../stores/signup'
+import ConflictCoordinationPanel from '../components/ConflictCoordinationPanel.vue'
+import { useRouter } from 'vue-router'
+import { useConflictStore } from '../stores/conflict'
+
+const router = useRouter()
+const conflictStore = useConflictStore()
+function gotoMatrix() { router.push('/conflicts') }
 
 const equipmentStore = useEquipmentStore()
 const performanceStore = usePerformanceStore()
@@ -282,7 +301,8 @@ const signupStore = useSignupStore()
 
 const tabs = [
   { key: 'equipment', label: '设备管理', icon: '🔧' },
-  { key: 'demand', label: '设备需求总览', icon: '📋' }
+  { key: 'demand', label: '设备需求总览', icon: '📋' },
+  { key: 'conflicts', label: '冲突协调', icon: '⚠️' }
 ]
 const activeTab = ref('equipment')
 

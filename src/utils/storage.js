@@ -5,7 +5,14 @@ const STORAGE_KEYS = {
   PARTS: 'band_parts',
   EQUIPMENTS: 'band_equipments',
   PERFORMANCES: 'band_performances',
-  SIGNUPS: 'band_signups'
+  SIGNUPS: 'band_signups',
+  LEAVES: 'band_leaves',
+  CONFLICTS: 'band_conflicts',
+  VENUES: 'band_venues',
+  SONG_CONFIGS: 'band_song_configs',
+  EQUIPMENT_SCHEDULES: 'band_equipment_schedules',
+  VENUE_FACILITY_SCHEDULES: 'band_venue_facility_schedules',
+  SUPPLEMENT_RECORDS: 'band_supplement_records'
 }
 
 const storage = {

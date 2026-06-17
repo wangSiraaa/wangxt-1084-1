@@ -1,8 +1,16 @@
 <template>
   <div class="member-dashboard">
     <div class="dashboard-header">
-      <h2>🎹 成员工作台</h2>
-      <p class="header-desc">查看可报名的排练计划，选择声部参与演出</p>
+      <div>
+        <h2>🎹 成员工作台</h2>
+        <p class="header-desc">查看可报名的排练计划，选择声部参与演出</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-warning header-matrix-btn" @click="gotoMatrix">
+          🔍 冲突矩阵
+          <span v-if="conflictStore.pendingCount > 0" class="pending-dot">{{ conflictStore.pendingCount }}</span>
+        </button>
+      </div>
     </div>
 
     <div class="stats-row">
@@ -171,6 +179,7 @@
                 </div>
               </div>
               <div class="signup-footer" v-if="canCancel(getPerf(su.performanceId))">
+                <button class="btn btn-sm btn-warning" @click="openLeaveModal(su)">⏰ 请假</button>
                 <button class="btn btn-sm btn-danger" @click="cancelSignupById(su)">取消报名</button>
               </div>
             </div>
@@ -178,6 +187,43 @@
           <div v-else class="empty-state">
             <div class="empty-icon">📝</div>
             <p>您还没有报名任何排练计划</p>
+          </div>
+        </div>
+
+        <!-- 请假申请 -->
+        <div v-show="activeTab === 'leave'" class="tab-panel">
+          <div class="panel-header">
+            <h3>请假申请</h3>
+            <button class="btn btn-primary" @click="openLeaveModal()">+ 新建请假</button>
+          </div>
+
+          <div class="leave-list" v-if="myLeaves.length > 0">
+            <div v-for="lv in myLeaves" :key="lv.id" class="leave-card">
+              <div class="leave-header">
+                <div>
+                  <h4>{{ getPerf(lv.performanceId)?.name || '未知演出单' }}</h4>
+                  <div class="leave-meta">
+                    <span>📅 {{ lv.startDate }}{{ lv.endDate !== lv.startDate ? ' ~ ' + lv.endDate : '' }}</span>
+                    <span>🎤 {{ getPart(lv.partId)?.name || '未知声部' }}</span>
+                  </div>
+                </div>
+                <span :class="['status-badge', 'status-leave-' + lv.status]">
+                  {{ LEAVE_STATUS_LABEL[lv.status] || lv.status }}
+                </span>
+              </div>
+              <div class="leave-body">
+                <div class="info-row"><span class="info-label">原因:</span><span>{{ lv.reason || '（未填写）' }}</span></div>
+                <div class="info-row" v-if="lv.resolution"><span class="info-label">处理方案:</span><span>{{ lv.resolution }}</span></div>
+                <div class="info-row" v-if="lv.resolutionNote"><span class="info-label">审批备注:</span><span>{{ lv.resolutionNote }}</span></div>
+              </div>
+              <div class="leave-footer" v-if="lv.status === 'pending'">
+                <button class="btn btn-sm btn-outline" @click="withdrawLeave(lv.id)">撤回申请</button>
+              </div>
+            </div>
+          </div>
+          <div v-else class="empty-state">
+            <div class="empty-icon">⏰</div>
+            <p>暂无请假记录</p>
           </div>
         </div>
 
@@ -216,6 +262,53 @@
         </div>
       </div>
     </div>
+    <!-- 请假弹窗 -->
+    <div v-if="showLeaveModal" class="modal-overlay" @click.self="closeLeaveModal">
+      <div class="modal modal-medium">
+        <div class="modal-header">
+          <h3>⏰ 提交请假申请</h3>
+          <button class="btn btn-close" @click="closeLeaveModal">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>演出单 *</label>
+            <select v-model="leaveForm.performanceId" class="form-input">
+              <option value="">请选择演出单...</option>
+              <option v-for="p in signupStore.getSignupsByUserId(userId.value).map(s => getPerf(s.performanceId)).filter(Boolean)" :key="p.id" :value="p.id">
+                {{ p.name }}
+              </option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>声部 *</label>
+            <select v-model="leaveForm.partId" class="form-input">
+              <option value="">请选择声部...</option>
+              <option v-for="part in partStore.partList" :key="part.id" :value="part.id">
+                {{ part.isKey ? '★ ' : '' }}{{ part.name }}
+              </option>
+            </select>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>开始日期 *</label>
+              <input v-model="leaveForm.startDate" type="date" class="form-input" />
+            </div>
+            <div class="form-group">
+              <label>结束日期</label>
+              <input v-model="leaveForm.endDate" type="date" class="form-input" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>请假原因 *</label>
+            <textarea v-model="leaveForm.reason" class="form-input form-textarea" placeholder="请详细说明请假原因..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" @click="closeLeaveModal">取消</button>
+          <button class="btn btn-primary" @click="submitLeave">提交申请</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -226,12 +319,19 @@ import { usePartStore } from '../stores/part'
 import { useSongStore } from '../stores/song'
 import { useSignupStore } from '../stores/signup'
 import { useAuthStore } from '../stores/auth'
+import { useRouter } from 'vue-router'
+import { useLeaveStore, LEAVE_STATUS_LABEL } from '../stores/leave'
+import { useConflictStore } from '../stores/conflict'
 
+const router = useRouter()
 const performanceStore = usePerformanceStore()
 const partStore = usePartStore()
 const songStore = useSongStore()
 const signupStore = useSignupStore()
 const authStore = useAuthStore()
+const leaveStore = useLeaveStore()
+const conflictStore = useConflictStore()
+function gotoMatrix() { router.push('/conflicts') }
 
 const userId = computed(() => authStore.currentUser?.id)
 
@@ -266,11 +366,62 @@ const completedCount = computed(() => {
   }).length
 })
 
+const myLeaveCount = computed(() => leaveStore.getLeavesByUserId(userId.value).length)
+
 const tabs = computed(() => [
   { key: 'available', label: '可报名排练', icon: '📅', count: availableCount.value },
   { key: 'my', label: '我的报名', icon: '📝', count: joinedCount.value },
+  { key: 'leave', label: '请假申请', icon: '⏰', count: myLeaveCount.value },
   { key: 'songs', label: '曲目库', icon: '🎵', count: 0 }
 ])
+
+const showLeaveModal = ref(false)
+const leaveForm = reactive({
+  performanceId: '',
+  partId: '',
+  startDate: '',
+  endDate: '',
+  reason: ''
+})
+
+function openLeaveModal(signup) {
+  leaveForm.performanceId = signup?.performanceId || ''
+  leaveForm.partId = signup?.partId || ''
+  const pd = getPerf(signup?.performanceId)?.performanceDate
+  leaveForm.startDate = pd ? new Date(pd).toISOString().slice(0, 10) : ''
+  leaveForm.endDate = pd ? new Date(pd).toISOString().slice(0, 10) : ''
+  leaveForm.reason = ''
+  showLeaveModal.value = true
+}
+function closeLeaveModal() {
+  showLeaveModal.value = false
+}
+function submitLeave() {
+  if (!leaveForm.performanceId || !leaveForm.partId || !leaveForm.startDate || !leaveForm.reason) {
+    alert('请填写完整请假信息（演出单、声部、请假日期、原因）')
+    return
+  }
+  const result = leaveStore.createLeave({
+    userId: userId.value,
+    performanceId: leaveForm.performanceId,
+    partId: leaveForm.partId,
+    startDate: leaveForm.startDate,
+    endDate: leaveForm.endDate || leaveForm.startDate,
+    reason: leaveForm.reason
+  }, performanceStore, signupStore)
+  if (result && result.success === false) {
+    alert('请假提交失败：' + (result.errors || []).join('；'))
+    return
+  }
+  alert('请假申请已提交，请等待队长审批')
+  closeLeaveModal()
+}
+const myLeaves = computed(() => leaveStore.getLeavesByUserId(userId.value))
+function withdrawLeave(id) {
+  if (confirm('确定撤回该请假申请？')) {
+    leaveStore.withdrawLeave(id)
+  }
+}
 
 const filteredAvailable = computed(() => {
   if (!searchKeyword.value) return availablePerformances.value

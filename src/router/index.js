@@ -24,6 +24,12 @@ const routes = [
     name: 'AdminDashboard',
     component: () => import('../views/AdminDashboard.vue'),
     meta: { role: ['admin'] }
+  },
+  {
+    path: '/conflicts',
+    name: 'ConflictMatrix',
+    component: () => import('../views/ConflictMatrix.vue'),
+    meta: { role: ['admin', 'captain', 'leader', 'member'] }
   }
 ]
 

@@ -7,6 +7,7 @@ import { EQUIPMENT_STATUS } from "./equipment"
 export const PERFORMANCE_STATUS = {
   DRAFT: "draft",
   CONFIRMED: "confirmed",
+  SUSPENDED: "suspended",
   STARTED: "started",
   COMPLETED: "completed"
 }
@@ -14,31 +15,51 @@ export const PERFORMANCE_STATUS = {
 export const PERFORMANCE_STATUS_LABEL = {
   [PERFORMANCE_STATUS.DRAFT]: "草稿",
   [PERFORMANCE_STATUS.CONFIRMED]: "已确认",
+  [PERFORMANCE_STATUS.SUSPENDED]: "已挂起",
   [PERFORMANCE_STATUS.STARTED]: "进行中",
   [PERFORMANCE_STATUS.COMPLETED]: "已完成"
 }
 
 export const PERFORMANCE_STATUS_FLOW = {
   [PERFORMANCE_STATUS.DRAFT]: [PERFORMANCE_STATUS.CONFIRMED],
-  [PERFORMANCE_STATUS.CONFIRMED]: [PERFORMANCE_STATUS.DRAFT, PERFORMANCE_STATUS.STARTED],
+  [PERFORMANCE_STATUS.CONFIRMED]: [PERFORMANCE_STATUS.DRAFT, PERFORMANCE_STATUS.STARTED, PERFORMANCE_STATUS.SUSPENDED],
+  [PERFORMANCE_STATUS.SUSPENDED]: [PERFORMANCE_STATUS.CONFIRMED, PERFORMANCE_STATUS.DRAFT],
   [PERFORMANCE_STATUS.STARTED]: [PERFORMANCE_STATUS.COMPLETED],
   [PERFORMANCE_STATUS.COMPLETED]: []
+}
+
+export const SONG_CHANGE_REASON = {
+  SUPPLEMENT: "supplement",
+  TECHNICAL: "technical",
+  OTHER: "other"
+}
+
+export const SONG_CHANGE_REASON_LABEL = {
+  [SONG_CHANGE_REASON.SUPPLEMENT]: "补录",
+  [SONG_CHANGE_REASON.TECHNICAL]: "技术调整",
+  [SONG_CHANGE_REASON.OTHER]: "其他"
 }
 
 const defaultPerformances = []
 
 export const usePerformanceStore = defineStore("performance", () => {
   const performances = ref(storage.get(STORAGE_KEYS.PERFORMANCES) || defaultPerformances)
+  const supplementRecords = ref(storage.get(STORAGE_KEYS.SUPPLEMENT_RECORDS) || [])
 
   const performanceList = computed(() => performances.value)
   const draftPerformances = computed(() => performances.value.filter(p => p.status === PERFORMANCE_STATUS.DRAFT))
   const confirmedPerformances = computed(() => performances.value.filter(p => p.status === PERFORMANCE_STATUS.CONFIRMED))
+  const suspendedPerformances = computed(() => performances.value.filter(p => p.status === PERFORMANCE_STATUS.SUSPENDED))
   const startedPerformances = computed(() => performances.value.filter(p => p.status === PERFORMANCE_STATUS.STARTED))
   const completedPerformances = computed(() => performances.value.filter(p => p.status === PERFORMANCE_STATUS.COMPLETED))
   const performanceCount = computed(() => performances.value.length)
 
   function persist() {
     storage.set(STORAGE_KEYS.PERFORMANCES, performances.value)
+  }
+
+  function persistSupplement() {
+    storage.set(STORAGE_KEYS.SUPPLEMENT_RECORDS, supplementRecords.value)
   }
 
   function getPerformanceById(id) {
@@ -100,6 +121,7 @@ export const usePerformanceStore = defineStore("performance", () => {
     const newPerformance = {
       id: generateId(),
       status: PERFORMANCE_STATUS.DRAFT,
+      suspendedReason: "",
       ...data,
       createdAt: Date.now()
     }
@@ -107,6 +129,24 @@ export const usePerformanceStore = defineStore("performance", () => {
     performances.value.push(newPerformance)
     persist()
     return { success: true, performance: newPerformance }
+  }
+
+  function canModifySongs(performance) {
+    if (!performance) return false
+    if (performance.status === PERFORMANCE_STATUS.STARTED ||
+        performance.status === PERFORMANCE_STATUS.COMPLETED) {
+      return false
+    }
+    return true
+  }
+
+  function canDeleteSongs(performance) {
+    if (!performance) return false
+    if (performance.status === PERFORMANCE_STATUS.STARTED ||
+        performance.status === PERFORMANCE_STATUS.COMPLETED) {
+      return false
+    }
+    return true
   }
 
   function updatePerformance(id, updates, songStore, equipmentStore) {
@@ -124,6 +164,20 @@ export const usePerformanceStore = defineStore("performance", () => {
       }
     }
 
+    if (updates.songIds !== undefined) {
+      const addedSongs = updates.songIds.filter(id => !current.songIds.includes(id))
+      const removedSongs = current.songIds.filter(id => !updates.songIds.includes(id))
+
+      if (current.status === PERFORMANCE_STATUS.STARTED || current.status === PERFORMANCE_STATUS.COMPLETED) {
+        if (removedSongs.length > 0) {
+          return { success: false, errors: ["排练已开始，不能删除曲目，仅允许补录新增"] }
+        }
+        if (addedSongs.length > 0 && !(updates._supplementNote)) {
+          return { success: false, errors: ["排练已开始，新增曲目需通过补录流程"] }
+        }
+      }
+    }
+
     if (updates.songIds !== undefined || updates.equipmentIds !== undefined || updates.name !== undefined || updates.performanceDate !== undefined) {
       const validation = validatePerformance(merged, songStore, equipmentStore)
       if (!validation.valid) {
@@ -131,9 +185,42 @@ export const usePerformanceStore = defineStore("performance", () => {
       }
     }
 
-    performances.value[index] = { ...merged, updatedAt: Date.now() }
+    const cleanUpdates = { ...updates }
+    delete cleanUpdates._supplementNote
+
+    performances.value[index] = { ...merged, ...cleanUpdates, updatedAt: Date.now() }
     persist()
     return { success: true, performance: performances.value[index] }
+  }
+
+  function addSupplementSong(performanceId, songId, reason, note, operatorId) {
+    const perf = getPerformanceById(performanceId)
+    if (!perf) return { success: false, errors: ["演出单不存在"] }
+    if (perf.status !== PERFORMANCE_STATUS.STARTED && perf.status !== PERFORMANCE_STATUS.CONFIRMED) {
+      return { success: false, errors: ["仅确认或进行中的演出单可补录曲目"] }
+    }
+    if (perf.songIds.includes(songId)) {
+      return { success: false, errors: ["该曲目已在演出单中"] }
+    }
+
+    const record = {
+      id: generateId(),
+      performanceId,
+      songId,
+      reason: reason || SONG_CHANGE_REASON.SUPPLEMENT,
+      note: note || "",
+      operatorId: operatorId || null,
+      createdAt: Date.now()
+    }
+    supplementRecords.value.push(record)
+    persistSupplement()
+
+    const newSongIds = [...perf.songIds, songId]
+    return updatePerformance(performanceId, { songIds: newSongIds, _supplementNote: true })
+  }
+
+  function getSupplementRecordsByPerformanceId(performanceId) {
+    return supplementRecords.value.filter(r => r.performanceId === performanceId)
   }
 
   function deletePerformance(id) {
@@ -150,7 +237,7 @@ export const usePerformanceStore = defineStore("performance", () => {
     return { success: true }
   }
 
-  function transitionStatus(id, nextStatus, songStore, equipmentStore) {
+  function transitionStatus(id, nextStatus, songStore, equipmentStore, extra) {
     const performance = getPerformanceById(id)
     if (!performance) {
       return { success: false, errors: ["演出单不存在"] }
@@ -167,7 +254,8 @@ export const usePerformanceStore = defineStore("performance", () => {
       }
     }
 
-    return updatePerformance(id, { status: nextStatus }, songStore, equipmentStore)
+    const updates = { status: nextStatus, ...(extra || {}) }
+    return updatePerformance(id, updates, songStore, equipmentStore)
   }
 
   function confirmPerformance(id, songStore, equipmentStore) {
@@ -176,6 +264,14 @@ export const usePerformanceStore = defineStore("performance", () => {
 
   function startPerformance(id, songStore, equipmentStore) {
     return transitionStatus(id, PERFORMANCE_STATUS.STARTED, songStore, equipmentStore)
+  }
+
+  function suspendPerformance(id, reason) {
+    return transitionStatus(id, PERFORMANCE_STATUS.SUSPENDED, null, null, { suspendedReason: reason || "" })
+  }
+
+  function resumePerformance(id) {
+    return transitionStatus(id, PERFORMANCE_STATUS.CONFIRMED)
   }
 
   function completePerformance(id) {
@@ -217,24 +313,35 @@ export const usePerformanceStore = defineStore("performance", () => {
   if (!storage.get(STORAGE_KEYS.PERFORMANCES)) {
     persist()
   }
+  if (!storage.get(STORAGE_KEYS.SUPPLEMENT_RECORDS)) {
+    persistSupplement()
+  }
 
   return {
     performances,
+    supplementRecords,
     performanceList,
     draftPerformances,
     confirmedPerformances,
+    suspendedPerformances,
     startedPerformances,
     completedPerformances,
     performanceCount,
     getPerformanceById,
     canTransition,
     validatePerformance,
+    canModifySongs,
+    canDeleteSongs,
     createPerformance,
     updatePerformance,
+    addSupplementSong,
+    getSupplementRecordsByPerformanceId,
     deletePerformance,
     transitionStatus,
     confirmPerformance,
     startPerformance,
+    suspendPerformance,
+    resumePerformance,
     completePerformance,
     backToDraft,
     searchPerformances,
@@ -242,4 +349,3 @@ export const usePerformanceStore = defineStore("performance", () => {
     getEquipmentsByPerformanceId
   }
 })
-

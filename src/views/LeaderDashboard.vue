@@ -1,8 +1,16 @@
 <template>
   <div class="leader-dashboard">
     <div class="dashboard-header">
-      <h2>🎤 队长工作台</h2>
-      <p class="header-desc">管理曲目、声部和演出单，确保排练顺利进行</p>
+      <div>
+        <h2>🎤 队长工作台</h2>
+        <p class="header-desc">管理曲目、声部和演出单，确保排练顺利进行</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-warning header-matrix-btn" @click="gotoMatrix">
+          ⚠️ 冲突矩阵
+          <span v-if="conflictStore.pendingCount > 0" class="pending-dot">{{ conflictStore.pendingCount }}</span>
+        </button>
+      </div>
     </div>
 
     <div class="stats-row">
@@ -229,6 +237,13 @@
             <div class="empty-icon">📋</div>
             <p>暂无演出单，点击"新增演出单"开始创建</p>
           </div>
+        </div>
+
+        <div v-show="activeTab === 'songConfig'" class="tab-panel">
+          <SongConfigPanel />
+        </div>
+        <div v-show="activeTab === 'leave'" class="tab-panel">
+          <LeaveProcessPanel />
         </div>
       </div>
     </div>
@@ -478,6 +493,14 @@ import { useEquipmentStore } from '../stores/equipment'
 import { usePerformanceStore, PERFORMANCE_STATUS_LABEL, PERFORMANCE_STATUS } from '../stores/performance'
 import { useSignupStore } from '../stores/signup'
 import { useAuthStore } from '../stores/auth'
+import SongConfigPanel from '../components/SongConfigPanel.vue'
+import LeaveProcessPanel from '../components/LeaveProcessPanel.vue'
+import { useRouter } from 'vue-router'
+import { useConflictStore } from '../stores/conflict'
+
+const router = useRouter()
+const conflictStore = useConflictStore()
+function gotoMatrix() { router.push('/conflicts') }
 
 const songStore = useSongStore()
 const partStore = usePartStore()
@@ -489,7 +512,9 @@ const authStore = useAuthStore()
 const tabs = [
   { key: 'songs', label: '曲目管理', icon: '🎸' },
   { key: 'parts', label: '声部管理', icon: '🎼' },
-  { key: 'performances', label: '演出单管理', icon: '📋' }
+  { key: 'performances', label: '演出单管理', icon: '📋' },
+  { key: 'songConfig', label: '曲目配置', icon: '⚙️' },
+  { key: 'leave', label: '请假处理', icon: '⏰' }
 ]
 
 const activeTab = ref('songs')
